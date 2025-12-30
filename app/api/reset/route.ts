@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
-import { requireRole } from "@/lib/auth";
+import { authenticateBasic, requireRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   const authError = await requireRole(request, "super");
   if (authError) return authError;
+
+  // 僅允許 superadmin 執行重置
+  const user = await authenticateBasic(request);
+  if (!user || user.username !== "superadmin") {
+    return NextResponse.json({ error: "僅 superadmin 可重置" }, { status: 403 });
+  }
 
   try {
     // Get all ticket numbers before clearing
