@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { authenticateBasic, requireRole } from "@/lib/auth";
+import { addLog } from "@/lib/logs";
 import { createOrUpdateUser, ensureDefaultUsers, listUsers } from "@/lib/users";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
   if (authError) return authError;
 
   try {
+    const actor = await authenticateBasic(request);
     const body = await request.json();
     const { username, password, role } = body || {};
 
@@ -33,6 +35,14 @@ export async function POST(request: Request) {
       username: String(username),
       password: String(password),
       role,
+    });
+
+    await addLog({
+      ts: new Date().toISOString(),
+      username: actor?.username || "unknown",
+      role: actor?.role || "super",
+      action: "user:create",
+      detail: `create ${username} (${role})`,
     });
 
     return NextResponse.json({ ok: true, user: saved });

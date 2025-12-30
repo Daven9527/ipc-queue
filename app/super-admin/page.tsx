@@ -9,6 +9,14 @@ interface UserItem {
   role: UserRole;
 }
 
+interface LogItem {
+  ts: string;
+  username: string;
+  role: string;
+  action: string;
+  detail?: string;
+}
+
 interface AuthState {
   username: string;
   token: string;
@@ -29,6 +37,9 @@ export default function SuperAdminPage() {
   const [importLoading, setImportLoading] = useState(false);
   const [deletingUser, setDeletingUser] = useState<string | null>(null);
   const [currentPassword, setCurrentPassword] = useState<string>("");
+  const [logs, setLogs] = useState<LogItem[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [showLogsModal, setShowLogsModal] = useState(false);
 
   const [formUsername, setFormUsername] = useState("");
   const [formPassword, setFormPassword] = useState("");
@@ -39,6 +50,26 @@ export default function SuperAdminPage() {
   const authHeader: HeadersInit | undefined = auth
     ? { Authorization: `Basic ${auth.token}` }
     : undefined;
+
+  const logEvent = async (action: string, detail?: string) => {
+    if (!auth?.username) return;
+    try {
+      await fetch("/api/logs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: auth.username,
+          role: "super",
+          action,
+          detail,
+        }),
+      });
+    } catch (error) {
+      console.error("logEvent super failed", error);
+    }
+  };
 
   useEffect(() => {
     const cached = sessionStorage.getItem(SUPER_STORAGE_KEY);
@@ -113,6 +144,7 @@ export default function SuperAdminPage() {
       const newAuth = { username: data.username, token };
       setAuth(newAuth);
       sessionStorage.setItem(SUPER_STORAGE_KEY, JSON.stringify(newAuth));
+      logEvent("login");
       setLoginPassword("");
     } catch (error) {
       console.error("Super admin login failed", error);
@@ -123,6 +155,7 @@ export default function SuperAdminPage() {
   };
 
   const handleLogout = () => {
+    logEvent("logout");
     setAuth(null);
     sessionStorage.removeItem(SUPER_STORAGE_KEY);
     setUsers([]);
@@ -193,6 +226,54 @@ export default function SuperAdminPage() {
       }
     };
     input.click();
+  };
+
+  const handleFetchLogs = async () => {
+    if (!auth) return;
+    setLogsLoading(true);
+    try {
+      const res = await fetch("/api/logs", {
+        headers: authHeader,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data?.error || "讀取日誌失敗");
+        return;
+      }
+      setLogs(data.logs || []);
+      setShowLogsModal(true);
+    } catch (error) {
+      console.error("fetch logs failed", error);
+      alert("讀取日誌失敗");
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  const handleExportLogs = async () => {
+    if (!auth) return;
+    try {
+      const res = await fetch("/api/logs/export", {
+        headers: authHeader,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data?.error || "匯出失敗");
+        return;
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "logs.csv";
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error("export logs failed", error);
+      alert("匯出失敗");
+    }
   };
 
   const handleEditUser = (user: UserItem) => {
@@ -389,6 +470,13 @@ export default function SuperAdminPage() {
             <p className="text-sm md:text-base text-gray-600 mt-1">超級管理員專用 | {auth.username}</p>
           </div>
           <div className="flex gap-2">
+            <button
+              onClick={handleFetchLogs}
+              disabled={logsLoading}
+              className="rounded-lg bg-amber-600 px-4 py-2 text-sm md:text-base text-white font-medium hover:bg-amber-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {logsLoading ? "讀取日誌..." : "查看日誌"}
+            </button>
             <a
               href="/admin"
               className="rounded-lg bg-gray-200 px-4 py-2 text-sm md:text-base text-gray-800 font-medium hover:bg-gray-300 transition-colors"
@@ -549,6 +637,56 @@ export default function SuperAdminPage() {
           )}
         </div>
       </div>
+
+      {showLogsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowLogsModal(false)}>
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 md:p-6 border-b flex items-center justify-between">
+              <div>
+                <h3 className="text-lg md:text-xl font-semibold text-gray-900">活動日誌 (近 60 天)</h3>
+                <p className="text-sm text-gray-500 mt-1">登入、重置、帳號新增/編輯/刪除等操作</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleExportLogs}
+                  className="rounded-lg bg-green-600 px-3 py-1.5 text-sm text-white font-medium hover:bg-green-700 transition-colors"
+                >
+                  匯出 CSV
+                </button>
+                <button
+                  onClick={() => setShowLogsModal(false)}
+                  className="rounded-lg bg-gray-200 px-3 py-1.5 text-sm text-gray-800 font-medium hover:bg-gray-300 transition-colors"
+                >
+                  關閉
+                </button>
+              </div>
+            </div>
+            <div className="p-4 md:p-6 overflow-y-auto">
+              {logs.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">暫無日誌</div>
+              ) : (
+                <div className="space-y-2">
+                  {logs.map((log, idx) => (
+                    <div key={idx} className="border rounded-lg p-3 md:p-4 bg-gray-50">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-sm text-gray-700">{new Date(log.ts).toLocaleString()}</div>
+                        <div className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-800">
+                          {log.username} ({log.role})
+                        </div>
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-gray-900">{log.action}</div>
+                      {log.detail && <div className="mt-1 text-sm text-gray-700 break-words">{log.detail}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,8 @@
 ﻿import { NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 import * as XLSX from "xlsx";
-import { requireRole } from "@/lib/auth";
+import { authenticateBasic, requireRole } from "@/lib/auth";
+import { addLog } from "@/lib/logs";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ export async function POST(request: Request) {
   if (authError) return authError;
 
   try {
+    const actor = await authenticateBasic(request);
     // 解析 multipart/form-data
     const formData = await request.formData();
     const file = formData.get("file") as File;
@@ -133,6 +135,14 @@ export async function POST(request: Request) {
         errors.push(`第 ${i + 2} 行：處理失敗 - ${error instanceof Error ? error.message : "未知錯誤"}`);
       }
     }
+
+    await addLog({
+      ts: new Date().toISOString(),
+      username: actor?.username || "superadmin",
+      role: actor?.role || "super",
+      action: "import",
+      detail: `imported ${importedCount}, updated ${updatedCount}`,
+    });
 
     return NextResponse.json({
       success: true,

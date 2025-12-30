@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { createOrUpdateUser, ensureDefaultUsers, getUser } from "@/lib/users";
 import { redis } from "@/lib/redis";
+import { addLog } from "@/lib/logs";
+import { authenticateBasic } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +17,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ usern
   }
 
   try {
+    const actor = await authenticateBasic(request);
     await ensureDefaultUsers();
     const existing = await getUser(username);
     if (!existing) {
@@ -36,6 +39,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ usern
       username,
       password,
       role,
+    });
+
+    await addLog({
+      ts: new Date().toISOString(),
+      username: actor?.username || "unknown",
+      role: actor?.role || "super",
+      action: "user:update",
+      detail: `update ${username} (${role})`,
     });
 
     return NextResponse.json({ ok: true, user: saved });
@@ -78,9 +89,19 @@ export async function DELETE(request: Request, context: { params: Promise<{ user
   }
 
   try {
+    const actor = await authenticateBasic(request);
     await ensureDefaultUsers();
     await redis.del(`user:${username}`);
     await redis.srem("users:list", username);
+
+    await addLog({
+      ts: new Date().toISOString(),
+      username: actor?.username || "unknown",
+      role: actor?.role || "super",
+      action: "user:delete",
+      detail: `delete ${username}`,
+    });
+
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("Failed to delete user:", error);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 import { authenticateBasic, requireRole } from "@/lib/auth";
+import { addLog } from "@/lib/logs";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,14 @@ export async function POST(request: Request) {
     });
     // Clear the tickets list
     await redis.del("queue:tickets");
+
+    await addLog({
+      ts: new Date().toISOString(),
+      username: user.username,
+      role: user.role,
+      action: "reset",
+      detail: "system reset",
+    });
 
     return NextResponse.json({ ok: true });
   } catch (error) {

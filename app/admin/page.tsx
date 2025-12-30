@@ -30,6 +30,11 @@ interface TicketListResponse {
   tickets: TicketInfo[];
 }
 
+interface LogPayload {
+  action: string;
+  detail?: string;
+}
+
 const PM_STORAGE_KEY = "pmAuth";
 
 const statusLabels: Record<TicketStatus, string> = {
@@ -95,6 +100,24 @@ export default function AdminPage() {
   const [newNextNumber, setNewNextNumber] = useState<string>("");
   const editingTicketRef = useRef<number | null>(null);
 
+  const logEvent = async (payload: LogPayload) => {
+    if (!username) return;
+    try {
+      await fetch("/api/logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username,
+          role: "pm",
+          action: payload.action,
+          detail: payload.detail,
+        }),
+      });
+    } catch (error) {
+      console.error("logEvent failed", error);
+    }
+  };
+
   // Check if already authenticated (from sessionStorage) and register auto-logout on leave
   useEffect(() => {
     const cached = sessionStorage.getItem(PM_STORAGE_KEY);
@@ -146,6 +169,7 @@ export default function AdminPage() {
 
       setIsAuthenticated(true);
       sessionStorage.setItem(PM_STORAGE_KEY, JSON.stringify({ username: data.username }));
+      logEvent({ action: "login" });
     } catch (error) {
       console.error("Login failed", error);
       setPasswordError("登入失敗，請重試");
@@ -156,6 +180,7 @@ export default function AdminPage() {
   };
 
   const handleLogout = () => {
+    logEvent({ action: "logout" });
     setIsAuthenticated(false);
     sessionStorage.removeItem(PM_STORAGE_KEY);
     setUsername("");
@@ -369,6 +394,11 @@ export default function AdminPage() {
       
       // Force refresh tickets to show updated data
       await fetchTickets();
+
+      logEvent({
+        action: "ticket:update",
+        detail: `#${ticketNumber} status=${editStatus} assignee=${editAssignee || ""}`,
+      });
     } catch (error) {
       console.error("Failed to update ticket:", error);
       alert(error instanceof Error ? error.message : "更新失敗，請重試");
@@ -396,6 +426,11 @@ export default function AdminPage() {
       // Refresh tickets and state
       await fetchTickets();
       await fetchState();
+
+      logEvent({
+        action: "ticket:delete",
+        detail: `#${ticketNumber}`,
+      });
     } catch (error) {
       console.error("Failed to delete ticket:", error);
       alert(error instanceof Error ? error.message : "刪除失敗，請重試");

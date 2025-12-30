@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ensureDefaultUsers, verifyUser } from "@/lib/users";
+import { addLog } from "@/lib/logs";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,13 @@ export async function POST(request: Request) {
     if (!user) {
       return NextResponse.json({ error: "帳號或密碼錯誤" }, { status: 401 });
     }
+
+    await addLog({
+      ts: new Date().toISOString(),
+      username: user.username,
+      role: user.role,
+      action: "login",
+    });
 
     return NextResponse.json({ ok: true, username: user.username, role: user.role });
   } catch (error) {
