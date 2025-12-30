@@ -1,11 +1,24 @@
 import Link from "next/link";
+import Image from "next/image";
 
 export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-5xl text-center">
-        <h1 className="text-3xl md:text-5xl font-bold text-gray-900 mb-3 md:mb-4">叫號系統</h1>
-        <p className="text-base md:text-xl text-gray-600 mb-8 md:mb-12">Queue Management System</p>
+      <div className="w-full max-w-5xl text-center space-y-6 md:space-y-8">
+        <div className="flex justify-center">
+          <Image
+            src="/MSI IPC_logo_Black_20240313.png"
+            alt="MSI IPC Logo"
+            width={240}
+            height={80}
+            className="h-auto w-48 md:w-60"
+            priority
+          />
+        </div>
+        <div>
+          <h1 className="text-3xl md:text-5xl font-bold text-gray-900 mb-3 md:mb-4">IPC排隊系統</h1>
+          <p className="text-base md:text-xl text-gray-600">Queue Management System</p>
+        </div>
 
         <div className="grid gap-4 md:gap-6 md:grid-cols-3">
           <Link
