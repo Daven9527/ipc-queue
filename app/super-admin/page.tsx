@@ -42,15 +42,25 @@ export default function SuperAdminPage() {
 
   useEffect(() => {
     const cached = sessionStorage.getItem(SUPER_STORAGE_KEY);
-    if (!cached) return;
-    try {
-      const parsed = JSON.parse(cached) as AuthState;
-      if (parsed?.username && parsed?.token) {
-        setAuth(parsed);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as AuthState;
+        if (parsed?.username && parsed?.token) {
+          setAuth(parsed);
+        }
+      } catch (error) {
+        console.error("Failed to parse super auth cache", error);
       }
-    } catch (error) {
-      console.error("Failed to parse super auth cache", error);
     }
+
+    const clearAuth = () => {
+      sessionStorage.removeItem(SUPER_STORAGE_KEY);
+    };
+    // 僅在分頁關閉或重整時清除；站內路由切換不會觸發
+    window.addEventListener("beforeunload", clearAuth);
+    return () => {
+      window.removeEventListener("beforeunload", clearAuth);
+    };
   }, []);
 
   useEffect(() => {

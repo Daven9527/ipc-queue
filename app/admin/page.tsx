@@ -95,19 +95,29 @@ export default function AdminPage() {
   const [newNextNumber, setNewNextNumber] = useState<string>("");
   const editingTicketRef = useRef<number | null>(null);
 
-  // Check if already authenticated (from sessionStorage)
+  // Check if already authenticated (from sessionStorage) and register auto-logout on leave
   useEffect(() => {
     const cached = sessionStorage.getItem(PM_STORAGE_KEY);
-    if (!cached) return;
-    try {
-      const parsed = JSON.parse(cached);
-      if (parsed?.username) {
-        setUsername(parsed.username);
-        setIsAuthenticated(true);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed?.username) {
+          setUsername(parsed.username);
+          setIsAuthenticated(true);
+        }
+      } catch (error) {
+        console.error("Failed to parse cached pm auth", error);
       }
-    } catch (error) {
-      console.error("Failed to parse cached pm auth", error);
     }
+
+    const clearAuth = () => {
+      sessionStorage.removeItem(PM_STORAGE_KEY);
+    };
+    // 僅在分頁關閉或重整時清除；站內路由切換不會觸發
+    window.addEventListener("beforeunload", clearAuth);
+    return () => {
+      window.removeEventListener("beforeunload", clearAuth);
+    };
   }, []);
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
@@ -289,9 +299,15 @@ export default function AdminPage() {
       const contentDisposition = res.headers.get("Content-Disposition");
       let fileName = "票券資料.xlsx";
       if (contentDisposition) {
-        const fileNameMatch = contentDisposition.match(/filename="?(.+)"?/);
-        if (fileNameMatch) {
-          fileName = decodeURIComponent(fileNameMatch[1]);
+        // 先嘗試 RFC 5987 的 filename*
+        const matchUtf8 = contentDisposition.match(/filename\*\=UTF-8''([^;]+)/i);
+        if (matchUtf8?.[1]) {
+          fileName = decodeURIComponent(matchUtf8[1]);
+        } else {
+          const fileNameMatch = contentDisposition.match(/filename="?([^\";]+)"?/i);
+          if (fileNameMatch?.[1]) {
+            fileName = decodeURIComponent(fileNameMatch[1]);
+          }
         }
       }
 

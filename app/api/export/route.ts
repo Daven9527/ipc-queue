@@ -85,13 +85,15 @@ export async function GET() {
 
     // 生成文件名（包含當前日期時間）
     const now = new Date();
-    const fileName = `票券資料_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}.xlsx`;
+    const fileNameUtf8 = `票券資料_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}.xlsx`;
+    const fileNameAscii = `tickets_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}.xlsx`;
 
     // 返回 Excel 文件
     return new NextResponse(excelBuffer, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${encodeURIComponent(fileName)}"`,
+        // filename*: RFC 5987 for非ASCII；同時附上 ASCII 後備名稱避免部分瀏覽器出現副檔名異常
+        "Content-Disposition": `attachment; filename="${fileNameAscii}"; filename*=UTF-8''${encodeURIComponent(fileNameUtf8)}`,
       },
     });
   } catch (error) {
