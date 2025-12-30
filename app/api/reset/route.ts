@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
+import { requireRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+export async function POST(request: Request) {
+  const authError = await requireRole(request, "super");
+  if (authError) return authError;
+
   try {
     // Get all ticket numbers before clearing
     const ticketNumbers = await redis.lrange<number[]>("queue:tickets", 0, -1);

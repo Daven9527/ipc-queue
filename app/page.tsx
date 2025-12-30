@@ -31,8 +31,17 @@ export default function Home() {
             className="rounded-xl bg-white p-6 md:p-8 shadow-lg hover:shadow-xl transition-shadow"
           >
             <div className="text-3xl md:text-4xl mb-3 md:mb-4">⚙️</div>
+            <h2 className="text-xl md:text-2xl font-semibold text-gray-800 mb-2">PM 管理平台</h2>
+            <p className="text-sm md:text-base text-gray-600">發號、叫號、資料維護</p>
+          </Link>
+
+          <Link
+            href="/super-admin"
+            className="rounded-xl bg-white p-6 md:p-8 shadow-lg hover:shadow-xl transition-shadow"
+          >
+            <div className="text-3xl md:text-4xl mb-3 md:mb-4">🛡️</div>
             <h2 className="text-xl md:text-2xl font-semibold text-gray-800 mb-2">管理員控制台</h2>
-            <p className="text-sm md:text-base text-gray-600">發號、叫號、重置系統</p>
+            <p className="text-sm md:text-base text-gray-600">超級管理員與帳號管理</p>
           </Link>
         </div>
       </div>

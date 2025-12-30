@@ -1,25 +1,18 @@
 ﻿import { NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 import * as XLSX from "xlsx";
+import { requireRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-const IMPORT_PASSWORD = "Eunice";
-
 export async function POST(request: Request) {
+  const authError = await requireRole(request, "super");
+  if (authError) return authError;
+
   try {
     // 解析 multipart/form-data
     const formData = await request.formData();
     const file = formData.get("file") as File;
-    const password = formData.get("password") as string;
-
-    // 驗證密碼
-    if (password !== IMPORT_PASSWORD) {
-      return NextResponse.json(
-        { error: "密碼錯誤" },
-        { status: 401 }
-      );
-    }
 
     if (!file) {
       return NextResponse.json(
