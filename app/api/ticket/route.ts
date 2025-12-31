@@ -52,6 +52,7 @@ export async function POST(request: Request) {
       status: "pending",
       note: "",
       assignee: "",
+      createdAt: new Date().toISOString(),
     });
 
     return NextResponse.json({ ticketNumber });

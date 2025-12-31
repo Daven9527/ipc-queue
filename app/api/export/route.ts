@@ -4,6 +4,15 @@ import * as XLSX from "xlsx";
 
 export const dynamic = "force-dynamic";
 
+const diffDays = (dateStr?: string) => {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = new Date();
+  const diff = Math.floor((now.getTime() - d.getTime()) / 86400000);
+  return diff < 0 ? "" : diff;
+};
+
 export async function GET() {
   try {
     // 獲取所有票券號碼
@@ -35,7 +44,14 @@ export async function GET() {
           status?: string;
           note?: string;
           assignee?: string;
+          createdAt?: string;
+          processingAt?: string;
+          replyDate?: string;
         }>(key);
+
+        const createdAt = data?.createdAt || "";
+        const processingAt = data?.processingAt || "";
+        const replyDate = data?.replyDate || "";
 
         return {
           號碼: ticketNumber,
@@ -45,6 +61,10 @@ export async function GET() {
           預計使用機種: data?.machineType || "",
           起始日期: data?.startDate || "",
           期望完成日期: data?.expectedCompletionDate || "",
+          申請日期: createdAt ? new Date(createdAt).toISOString().split("T")[0] : "",
+          已等待天數: diffDays(createdAt),
+          處理天數: diffDays(processingAt),
+          已回覆天數: diffDays(replyDate),
           FCST: data?.fcst || "",
           預計量產日: data?.massProductionDate || "",
           處理進度: data?.status || "pending",
@@ -67,6 +87,10 @@ export async function GET() {
       { wch: 20 }, // 預計使用機種
       { wch: 15 }, // 起始日期
       { wch: 15 }, // 期望完成日期
+      { wch: 15 }, // 申請日期
+      { wch: 12 }, // 已等待天數
+      { wch: 12 }, // 處理天數
+      { wch: 12 }, // 已回覆天數
       { wch: 12 }, // FCST
       { wch: 15 }, // 預計量產日
       { wch: 12 }, // 處理進度

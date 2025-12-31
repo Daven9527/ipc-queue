@@ -14,6 +14,9 @@ interface TicketInfo {
   startDate?: string;
   expectedCompletionDate?: string;
   replyDate?: string;
+  createdAt?: string;
+  processingAt?: string;
+  completedAt?: string;
   fcst?: string;
   massProductionDate?: string;
   status: TicketStatus;
@@ -41,6 +44,9 @@ export async function GET(
       startDate?: string;
       expectedCompletionDate?: string;
       replyDate?: string;
+      createdAt?: string;
+      processingAt?: string;
+      completedAt?: string;
       fcst?: string;
       massProductionDate?: string;
       status?: string;
@@ -72,6 +78,9 @@ export async function GET(
       startDate: data.startDate || "",
       expectedCompletionDate: data.expectedCompletionDate || "",
       replyDate: data.replyDate || "",
+      createdAt: data.createdAt || "",
+      processingAt: data.processingAt || "",
+      completedAt: data.completedAt || "",
       fcst: data.fcst || "",
       massProductionDate: data.massProductionDate || "",
       status: (data?.status || "pending") as TicketStatus,
@@ -111,6 +120,12 @@ export async function PATCH(
       if (status === "replied") {
         updates.replyDate = new Date().toISOString();
       }
+      if (status === "processing" && !(await redis.hexists(key, "processingAt"))) {
+        updates.processingAt = new Date().toISOString();
+      }
+      if (status === "completed") {
+        updates.completedAt = new Date().toISOString();
+      }
     }
 
     if (note !== undefined && note !== null) {
@@ -142,6 +157,9 @@ export async function PATCH(
       startDate?: string;
       expectedCompletionDate?: string;
       replyDate?: string;
+      createdAt?: string;
+      processingAt?: string;
+      completedAt?: string;
       fcst?: string;
       massProductionDate?: string;
       status?: string;
@@ -158,6 +176,9 @@ export async function PATCH(
       startDate: data?.startDate || "",
       expectedCompletionDate: data?.expectedCompletionDate || "",
       replyDate: data?.replyDate || "",
+      createdAt: data?.createdAt || "",
+      processingAt: data?.processingAt || "",
+      completedAt: data?.completedAt || "",
       fcst: data?.fcst || "",
       massProductionDate: data?.massProductionDate || "",
       status: (data?.status || "pending") as TicketStatus,

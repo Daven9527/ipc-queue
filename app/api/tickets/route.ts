@@ -14,6 +14,9 @@ interface TicketInfo {
   startDate?: string;
   expectedCompletionDate?: string;
   replyDate?: string;
+  createdAt?: string;
+  processingAt?: string;
+  completedAt?: string;
   fcst?: string;
   massProductionDate?: string;
   status: TicketStatus;
@@ -50,6 +53,9 @@ export async function GET(request: NextRequest) {
           startDate?: string;
           expectedCompletionDate?: string;
           replyDate?: string;
+          createdAt?: string;
+          processingAt?: string;
+          completedAt?: string;
           fcst?: string;
           massProductionDate?: string;
           status?: string;
@@ -73,6 +79,9 @@ export async function GET(request: NextRequest) {
           startDate: data?.startDate || "",
           expectedCompletionDate: data?.expectedCompletionDate || "",
           replyDate: data?.replyDate || "",
+          createdAt: data?.createdAt || "",
+          processingAt: data?.processingAt || "",
+          completedAt: data?.completedAt || "",
           fcst: data?.fcst || "",
           massProductionDate: data?.massProductionDate || "",
           status,
