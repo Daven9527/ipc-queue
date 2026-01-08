@@ -74,25 +74,31 @@ const calculateTaiwanDayDiff = (replyDate: string): number => {
 
 
 export default function DisplayPage() {
-  const [state, setState] = useState<QueueState>({ currentNumber: 0, lastTicket: 0, nextNumber: 1 });
+  const [selectedPm, setSelectedPm] = useState<string>("");
+  const [pmState, setPmState] = useState<QueueState>({ currentNumber: 0, lastTicket: 0, nextNumber: 1 });
   const [tickets, setTickets] = useState<TicketInfo[]>([]);
   const [viewingTicket, setViewingTicket] = useState<TicketInfo | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
   const [pmFilter, setPmFilter] = useState<string>("");
 
+  const fetchPmState = async (pm: string) => {
+    try {
+      const res = await fetch(`/api/state?pm=${encodeURIComponent(pm)}`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setPmState(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch PM state:", error);
+    }
+  };
+
   useEffect(() => {
     const fetchInitial = async () => {
       try {
-        const [stateRes, ticketsRes] = await Promise.all([
-          fetch("/api/state", { cache: "no-store" }),
-          fetch("/api/tickets?limit=50", { cache: "no-store" }),
-        ]);
-
-        const stateData = await stateRes.json();
+        const ticketsRes = await fetch("/api/tickets?limit=50", { cache: "no-store" });
         const ticketsData: TicketListResponse = await ticketsRes.json();
-
-        setState(stateData);
         setTickets(ticketsData.tickets || []);
       } catch (error) {
         console.error("Failed to fetch data:", error);
@@ -102,20 +108,25 @@ export default function DisplayPage() {
     fetchInitial();
   }, []);
 
+  useEffect(() => {
+    if (selectedPm) {
+      fetchPmState(selectedPm);
+    }
+  }, [selectedPm]);
+
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
     setRefreshMessage(null);
     try {
-      const [stateRes, ticketsRes] = await Promise.all([
-        fetch("/api/state", { cache: "no-store" }),
-        fetch("/api/tickets?limit=50", { cache: "no-store" }),
-      ]);
-      if (!stateRes.ok) throw new Error("狀態取得失敗");
+      const ticketsRes = await fetch("/api/tickets?limit=50", { cache: "no-store" });
       if (!ticketsRes.ok) throw new Error("號碼列表取得失敗");
-      const stateData: QueueState = await stateRes.json();
       const ticketsData: TicketListResponse = await ticketsRes.json();
-      setState(stateData);
       setTickets(ticketsData.tickets || []);
+      
+      if (selectedPm) {
+        await fetchPmState(selectedPm);
+      }
+      
       setRefreshMessage("已更新");
       setTimeout(() => setRefreshMessage(null), 2000);
     } catch (error) {
@@ -127,30 +138,51 @@ export default function DisplayPage() {
     }
   };
 
-  const nextNumber = state.nextNumber ?? (state.currentNumber < state.lastTicket ? state.currentNumber + 1 : null);
+  const nextNumber = selectedPm ? (pmState.nextNumber ?? (pmState.currentNumber < pmState.lastTicket ? pmState.currentNumber + 1 : null)) : null;
   
-  // Find current ticket info
-  const currentTicket = tickets.find((t) => t.ticketNumber === state.currentNumber);
+  // Find current ticket info for selected PM
+  const currentTicket = selectedPm ? tickets.find((t) => {
+    if (selectedPm === "unassigned") {
+      return (!t.assignee || t.assignee === "") && t.ticketNumber === pmState.currentNumber;
+    }
+    return t.assignee === selectedPm && t.ticketNumber === pmState.currentNumber;
+  }) : null;
 
-  // Get unique PM list from tickets
+  // Get unique PM list from tickets, including "unassigned"
   const pmList = Array.from(
     new Set(
       tickets
-        .map((t) => t.assignee)
+        .map((t) => t.assignee || "unassigned")
         .filter((pm): pm is string => Boolean(pm))
     )
   ).sort();
 
   // Filter tickets by PM if filter is set
   const filteredTickets = pmFilter
-    ? tickets.filter((t) => t.assignee === pmFilter)
+    ? tickets.filter((t) => {
+        if (pmFilter === "unassigned") {
+          return !t.assignee || t.assignee === "";
+        }
+        return t.assignee === pmFilter;
+      })
     : tickets;
+
+  // Filter tickets by selected PM for display
+  const displayTickets = selectedPm
+    ? tickets.filter((t) => {
+        if (selectedPm === "unassigned") {
+          return !t.assignee || t.assignee === "";
+        }
+        return t.assignee === selectedPm;
+      })
+    : [];
 
   // Sort tickets in ascending order (oldest first)
   const sortedTickets = [...filteredTickets].sort((a, b) => a.ticketNumber - b.ticketNumber);
+  const sortedDisplayTickets = [...displayTickets].sort((a, b) => a.ticketNumber - b.ticketNumber);
 
-  const isCurrentNumber = (ticketNumber: number) => ticketNumber === state.currentNumber;
-  const isCalled = (ticketNumber: number) => ticketNumber <= state.currentNumber;
+  const isCurrentNumber = (ticketNumber: number) => selectedPm && ticketNumber === pmState.currentNumber;
+  const isCalled = (ticketNumber: number) => selectedPm && ticketNumber <= pmState.currentNumber;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 p-4 md:p-8">
@@ -166,6 +198,24 @@ export default function DisplayPage() {
         </div>
 
         <div className="mb-4 md:mb-6 flex flex-col md:flex-row items-center justify-center gap-3 md:gap-4">
+          <select
+            value={selectedPm}
+            onChange={(e) => {
+              setSelectedPm(e.target.value);
+              if (e.target.value) {
+                fetchPmState(e.target.value);
+              }
+            }}
+            className="rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 text-white text-sm md:text-base px-4 py-2 font-medium focus:border-white/40 focus:ring-2 focus:ring-white/20 focus:outline-none"
+          >
+            <option value="">請選擇 PM</option>
+            <option value="unassigned" className="bg-gray-800 text-white">尚未指派 PM</option>
+            {pmList.filter(pm => pm !== "unassigned").map((pm) => (
+              <option key={pm} value={pm} className="bg-gray-800 text-white">
+                {pm}
+              </option>
+            ))}
+          </select>
           <button
             onClick={handleManualRefresh}
             disabled={isRefreshing}
@@ -180,138 +230,141 @@ export default function DisplayPage() {
           )}
         </div>
 
-        {/* 目前叫號區塊 */}
-        <div className="mb-6 md:mb-8">
-          <h1 className="text-2xl md:text-4xl lg:text-5xl font-bold text-white mb-6 md:mb-8 text-center">目前叫號</h1>
-          
-          <div className="bg-white rounded-2xl shadow-2xl p-6 md:p-12 lg:p-16 mb-6 md:mb-8">
-            <p className="text-xl md:text-2xl lg:text-3xl text-gray-600 mb-4 md:mb-6 text-center">現在服務</p>
-            <div className="text-6xl md:text-8xl lg:text-9xl font-bold text-blue-600 mb-4 md:mb-6 text-center">
-              {state.currentNumber === 0 ? "—" : state.currentNumber}
-            </div>
+        {/* 目前叫號區塊 - 只在選擇 PM 後顯示 */}
+        {selectedPm && (
+          <div className="mb-6 md:mb-8">
+            <h1 className="text-2xl md:text-4xl lg:text-5xl font-bold text-white mb-2 md:mb-4 text-center">
+              {selectedPm === "unassigned" ? "尚未指派 PM" : selectedPm} - 目前叫號
+            </h1>
             
-            {/* 顯示目前號碼的狀態和備註 */}
-            {state.currentNumber > 0 && (
-              <div className="mt-6 md:mt-8 space-y-4 md:space-y-5">
-                {/* 處理進度 */}
-                {currentTicket ? (
-                  <div className="flex flex-col items-center gap-3 md:gap-4">
-                    <p className="text-base md:text-lg text-gray-600 font-medium">處理進度</p>
-                    <div className={`inline-block px-5 md:px-7 py-2.5 md:py-3.5 rounded-full text-base md:text-lg font-semibold ${
-                      currentTicket.status === "processing"
-                        ? "bg-blue-500 text-white"
-                        : currentTicket.status === "replied"
-                        ? "bg-indigo-500 text-white"
-                        : currentTicket.status === "completed"
-                        ? "bg-green-500 text-white"
-                        : currentTicket.status === "cancelled"
-                        ? "bg-red-500 text-white"
-                        : "bg-yellow-500 text-white"
-                    }`}>
-                      {statusLabels[currentTicket.status]}
+            <div className="bg-white rounded-2xl shadow-2xl p-6 md:p-12 lg:p-16 mb-6 md:mb-8">
+              <p className="text-xl md:text-2xl lg:text-3xl text-gray-600 mb-4 md:mb-6 text-center">現在服務</p>
+              <div className="text-6xl md:text-8xl lg:text-9xl font-bold text-blue-600 mb-4 md:mb-6 text-center">
+                {pmState.currentNumber === 0 ? "—" : pmState.currentNumber}
+              </div>
+              
+              {/* 顯示目前號碼的狀態和備註 */}
+              {pmState.currentNumber > 0 && (
+                <div className="mt-6 md:mt-8 space-y-4 md:space-y-5">
+                  {/* 處理進度 */}
+                  {currentTicket ? (
+                    <div className="flex flex-col items-center gap-3 md:gap-4">
+                      <p className="text-base md:text-lg text-gray-600 font-medium">處理進度</p>
+                      <div className={`inline-block px-5 md:px-7 py-2.5 md:py-3.5 rounded-full text-base md:text-lg font-semibold ${
+                        currentTicket.status === "processing"
+                          ? "bg-blue-500 text-white"
+                          : currentTicket.status === "replied"
+                          ? "bg-indigo-500 text-white"
+                          : currentTicket.status === "completed"
+                          ? "bg-green-500 text-white"
+                          : currentTicket.status === "cancelled"
+                          ? "bg-red-500 text-white"
+                          : "bg-yellow-500 text-white"
+                      }`}>
+                        {statusLabels[currentTicket.status]}
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-3 md:gap-4">
-                    <p className="text-base md:text-lg text-gray-600 font-medium">處理進度</p>
-                    <div className="inline-block px-5 md:px-7 py-2.5 md:py-3.5 rounded-full text-base md:text-lg font-semibold bg-gray-400 text-white">
-                      處理中
+                  ) : (
+                    <div className="flex flex-col items-center gap-3 md:gap-4">
+                      <p className="text-base md:text-lg text-gray-600 font-medium">處理進度</p>
+                      <div className="inline-block px-5 md:px-7 py-2.5 md:py-3.5 rounded-full text-base md:text-lg font-semibold bg-gray-400 text-white">
+                        處理中
+                      </div>
                     </div>
-                  </div>
-                )}
-                
-                {/* PM 備註 */}
-                {currentTicket?.note && (
-                  <div className="mt-4 md:mt-6 p-5 md:p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border-2 border-blue-200 text-left max-w-3xl mx-auto shadow-md">
-                    <div className="flex items-center gap-2 mb-3">
-                      <svg className="w-5 h-5 md:w-6 md:h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                      <p className="text-base md:text-lg font-bold text-blue-900">PM 備註</p>
+                  )}
+                  
+                  {/* PM 備註 */}
+                  {currentTicket?.note && (
+                    <div className="mt-4 md:mt-6 p-5 md:p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border-2 border-blue-200 text-left max-w-3xl mx-auto shadow-md">
+                      <div className="flex items-center gap-2 mb-3">
+                        <svg className="w-5 h-5 md:w-6 md:h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        <p className="text-base md:text-lg font-bold text-blue-900">PM 備註</p>
+                      </div>
+                      <p className="text-sm md:text-base text-gray-800 whitespace-pre-wrap break-words leading-relaxed">
+                        {currentTicket.note}
+                      </p>
                     </div>
-                    <p className="text-sm md:text-base text-gray-800 whitespace-pre-wrap break-words leading-relaxed">
-                      {currentTicket.note}
-                    </p>
-                  </div>
-                )}
+                  )}
 
-                {/* PM */}
-                {currentTicket?.assignee && (
-                  <div className="mt-4 md:mt-6 p-5 md:p-6 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border-2 border-purple-200 text-left max-w-3xl mx-auto shadow-md">
-                    <div className="flex items-center gap-2 mb-3">
-                      <svg className="w-5 h-5 md:w-6 md:h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                      <p className="text-base md:text-lg font-bold text-purple-900">PM</p>
+                  {/* PM */}
+                  {currentTicket?.assignee && (
+                    <div className="mt-4 md:mt-6 p-5 md:p-6 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border-2 border-purple-200 text-left max-w-3xl mx-auto shadow-md">
+                      <div className="flex items-center gap-2 mb-3">
+                        <svg className="w-5 h-5 md:w-6 md:h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                        <p className="text-base md:text-lg font-bold text-purple-900">PM</p>
+                      </div>
+                      <p className="text-sm md:text-base text-gray-800 break-words leading-relaxed">
+                        {currentTicket.assignee}
+                      </p>
                     </div>
-                    <p className="text-sm md:text-base text-gray-800 break-words leading-relaxed">
-                      {currentTicket.assignee}
-                    </p>
-                  </div>
-                )}
+                  )}
 
-
-                {/* 期望完成日期 */}
-                {currentTicket?.expectedCompletionDate && (
-                  <div className="mt-4 md:mt-6 p-5 md:p-6 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border-2 border-green-200 text-left max-w-3xl mx-auto shadow-md">
-                    <div className="flex items-center gap-2 mb-3">
-                      <svg className="w-5 h-5 md:w-6 md:h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      <p className="text-base md:text-lg font-bold text-green-900">期望完成日期</p>
+                  {/* 期望完成日期 */}
+                  {currentTicket?.expectedCompletionDate && (
+                    <div className="mt-4 md:mt-6 p-5 md:p-6 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border-2 border-green-200 text-left max-w-3xl mx-auto shadow-md">
+                      <div className="flex items-center gap-2 mb-3">
+                        <svg className="w-5 h-5 md:w-6 md:h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <p className="text-base md:text-lg font-bold text-green-900">期望完成日期</p>
+                      </div>
+                      <p className="text-sm md:text-base text-gray-800 break-words leading-relaxed">
+                        {currentTicket.expectedCompletionDate}
+                      </p>
                     </div>
-                    <p className="text-sm md:text-base text-gray-800 break-words leading-relaxed">
-                      {currentTicket.expectedCompletionDate}
-                    </p>
-                  </div>
-                )}
+                  )}
+                </div>
+              )}
+            </div>
+
+            {nextNumber && (
+              <div className="bg-white/10 backdrop-blur-sm rounded-2xl shadow-xl p-4 md:p-6 lg:p-8 mb-4 md:mb-6 text-center">
+                <p className="text-lg md:text-xl lg:text-2xl text-gray-300 mb-3 md:mb-4">下一位</p>
+                <div className="text-4xl md:text-5xl lg:text-7xl font-bold text-yellow-400">
+                  {nextNumber}
+                </div>
+              </div>
+            )}
+
+            {pmState.currentNumber === 0 && pmState.lastTicket === 0 && (
+              <div className="bg-white/10 backdrop-blur-sm rounded-2xl shadow-xl p-6 md:p-8 lg:p-12 text-center">
+                <p className="text-lg md:text-xl lg:text-2xl text-gray-300">等待中...</p>
               </div>
             )}
           </div>
+        )}
 
-          {nextNumber && (
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl shadow-xl p-4 md:p-6 lg:p-8 mb-4 md:mb-6 text-center">
-              <p className="text-lg md:text-xl lg:text-2xl text-gray-300 mb-3 md:mb-4">下一位</p>
-              <div className="text-4xl md:text-5xl lg:text-7xl font-bold text-yellow-400">
-                {nextNumber}
-              </div>
-            </div>
-          )}
-
-          {state.currentNumber === 0 && state.lastTicket === 0 && (
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl shadow-xl p-6 md:p-8 lg:p-12 text-center">
-              <p className="text-lg md:text-xl lg:text-2xl text-gray-300">等待中...</p>
-            </div>
-          )}
-        </div>
-
-        {/* 所有號碼列表 */}
-        {tickets.length > 0 && (
+        {/* 所有號碼列表 - 顯示選中 PM 的號碼 */}
+        {selectedPm && sortedDisplayTickets.length > 0 && (
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl shadow-xl p-4 md:p-6">
             <div className="flex flex-col md:flex-row items-center justify-between mb-4 md:mb-6 gap-3 md:gap-4">
-              <h2 className="text-xl md:text-2xl lg:text-3xl font-bold text-white text-center">所有號碼狀態</h2>
-              {pmList.length > 0 && (
-                <select
-                  value={pmFilter}
-                  onChange={(e) => setPmFilter(e.target.value)}
-                  className="rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 text-white text-sm md:text-base px-3 md:px-4 py-2 font-medium focus:border-white/40 focus:ring-2 focus:ring-white/20 focus:outline-none"
-                >
-                  <option value="">全部 PM</option>
-                  {pmList.map((pm) => (
-                    <option key={pm} value={pm} className="bg-gray-800 text-white">
-                      {pm}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <h2 className="text-xl md:text-2xl lg:text-3xl font-bold text-white text-center">
+                {selectedPm === "unassigned" ? "尚未指派 PM" : selectedPm} - 號碼列表
+              </h2>
+              <select
+                value={pmFilter}
+                onChange={(e) => setPmFilter(e.target.value)}
+                className="rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 text-white text-sm md:text-base px-3 md:px-4 py-2 font-medium focus:border-white/40 focus:ring-2 focus:ring-white/20 focus:outline-none"
+              >
+                <option value="">全部號碼</option>
+                <option value="pending" className="bg-gray-800 text-white">等待中</option>
+                <option value="processing" className="bg-gray-800 text-white">處理中</option>
+                <option value="replied" className="bg-gray-800 text-white">已回覆</option>
+                <option value="completed" className="bg-gray-800 text-white">已完成</option>
+                <option value="cancelled" className="bg-gray-800 text-white">已取消</option>
+              </select>
             </div>
-            {sortedTickets.length === 0 ? (
+            {sortedDisplayTickets.filter(t => !pmFilter || t.status === pmFilter).length === 0 ? (
               <div className="text-center text-gray-300 py-8">
                 沒有符合條件的號碼
               </div>
             ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
-              {sortedTickets.map((ticket) => (
+              {sortedDisplayTickets.filter(t => !pmFilter || t.status === pmFilter).map((ticket) => (
                 <div
                   key={ticket.ticketNumber}
                   onClick={() => setViewingTicket(ticket)}

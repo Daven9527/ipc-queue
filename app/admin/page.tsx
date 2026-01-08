@@ -6,6 +6,13 @@ interface QueueState {
   currentNumber: number;
   lastTicket: number;
   nextNumber?: number;
+  pm?: string;
+}
+
+interface PmState {
+  pm: string;
+  currentNumber: number;
+  nextNumber: number;
 }
 
 type TicketStatus = "pending" | "processing" | "replied" | "completed" | "cancelled";
@@ -87,6 +94,7 @@ export default function AdminPage() {
   const [passwordError, setPasswordError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [state, setState] = useState<QueueState>({ currentNumber: 0, lastTicket: 0, nextNumber: 1 });
+  const [pmStates, setPmStates] = useState<Record<string, PmState>>({});
   const [tickets, setTickets] = useState<TicketInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [editingTicket, setEditingTicket] = useState<number | null>(null);
@@ -94,12 +102,10 @@ export default function AdminPage() {
   const [editNote, setEditNote] = useState<string>("");
   const [editAssignee, setEditAssignee] = useState<string>("");
   const [viewingTicket, setViewingTicket] = useState<TicketInfo | null>(null);
-  const [editingCurrentNumber, setEditingCurrentNumber] = useState(false);
-  const [newCurrentNumber, setNewCurrentNumber] = useState<string>("");
-  const [editingNextNumber, setEditingNextNumber] = useState(false);
-  const [newNextNumber, setNewNextNumber] = useState<string>("");
+  const [editingPmStates, setEditingPmStates] = useState<Record<string, { current?: string; next?: string }>>({});
   const editingTicketRef = useRef<number | null>(null);
   const [pmUsers, setPmUsers] = useState<string[]>([]);
+  const [pmFilter, setPmFilter] = useState<string>("");
 
   const logEvent = async (payload: LogPayload) => {
     if (!username) return;
@@ -197,6 +203,33 @@ export default function AdminPage() {
     }
   };
 
+  const fetchAllPmStates = async () => {
+    try {
+      const allPms = ["unassigned", ...pmUsers];
+      const states: Record<string, PmState> = {};
+      
+      for (const pm of allPms) {
+        try {
+          const res = await fetch(`/api/state?pm=${encodeURIComponent(pm)}`, { cache: "no-store" });
+          if (res.ok) {
+            const data = await res.json();
+            states[pm] = {
+              pm,
+              currentNumber: data.currentNumber ?? 0,
+              nextNumber: data.nextNumber ?? (data.currentNumber ?? 0) + 1,
+            };
+          }
+        } catch (error) {
+          console.error(`Failed to fetch state for ${pm}:`, error);
+        }
+      }
+      
+      setPmStates(states);
+    } catch (error) {
+      console.error("Failed to fetch PM states:", error);
+    }
+  };
+
   const fetchTickets = async () => {
     try {
       const res = await fetch("/api/tickets?limit=50", { cache: "no-store" });
@@ -232,11 +265,22 @@ export default function AdminPage() {
     fetchPmUsers();
   }, [isAuthenticated]);
 
-  const handleNext = async () => {
+  useEffect(() => {
+    if (pmUsers.length > 0) {
+      fetchAllPmStates();
+    }
+  }, [pmUsers]);
+
+  const handleNext = async (pm?: string) => {
     setLoading(true);
     try {
-      await fetch("/api/next", { method: "POST" });
+      await fetch("/api/next", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pm }),
+      });
       await fetchState();
+      await fetchAllPmStates();
       await fetchTickets();
     } catch (error) {
       console.error("Failed to call next:", error);
@@ -245,22 +289,26 @@ export default function AdminPage() {
     }
   };
 
-  const handleUpdateCurrentNumber = async () => {
-    const numberValue = Number(newCurrentNumber);
+  const handleUpdatePmState = async (pm: string, field: "current" | "next", value: string) => {
+    const numberValue = Number(value);
     if (isNaN(numberValue)) {
       alert("請輸入有效的數字");
       return;
     }
 
-    // 不套用跳號邏輯，允許設置任何值
     setLoading(true);
     try {
+      const body: any = { pm };
+      if (field === "current") {
+        body.currentNumber = numberValue;
+      } else {
+        body.nextNumber = numberValue;
+      }
+
       const res = await fetch("/api/state", {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ currentNumber: numberValue }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -268,62 +316,28 @@ export default function AdminPage() {
         throw new Error(errorData.error || "更新失敗");
       }
 
-      setEditingCurrentNumber(false);
-      setNewCurrentNumber("");
-      await fetchState();
-      await fetchTickets();
-    } catch (error) {
-      console.error("Failed to update current number:", error);
-      alert(error instanceof Error ? error.message : "更新失敗，請重試");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCancelEditCurrentNumber = () => {
-    setEditingCurrentNumber(false);
-    setNewCurrentNumber("");
-  };
-
-  const handleUpdateNextNumber = async () => {
-    const nextNumberValue = Number(newNextNumber);
-    if (isNaN(nextNumberValue)) {
-      alert("請輸入有效的數字");
-      return;
-    }
-
-    // 只更新下一號，不改變目前號碼
-    setLoading(true);
-    try {
-      const res = await fetch("/api/state", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ nextNumber: nextNumberValue }),
+      // Clear editing state
+      setEditingPmStates((prev) => {
+        const next = { ...prev };
+        if (next[pm]) {
+          delete next[pm][field];
+          if (Object.keys(next[pm]).length === 0) {
+            delete next[pm];
+          }
+        }
+        return next;
       });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "更新失敗");
-      }
-
-      setEditingNextNumber(false);
-      setNewNextNumber("");
-      await fetchState();
+      await fetchAllPmStates();
       await fetchTickets();
     } catch (error) {
-      console.error("Failed to update next number:", error);
+      console.error("Failed to update PM state:", error);
       alert(error instanceof Error ? error.message : "更新失敗，請重試");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCancelEditNextNumber = () => {
-    setEditingNextNumber(false);
-    setNewNextNumber("");
-  };
 
   const handleExportExcel = async () => {
     setLoading(true);
@@ -523,11 +537,37 @@ export default function AdminPage() {
   }
 
   const waitingCount = tickets.filter(ticket => ticket.status === "pending").length;
-  const isCurrentNumber = (ticketNumber: number) => ticketNumber === state.currentNumber;
-  const isCalled = (ticketNumber: number) => ticketNumber <= state.currentNumber;
+  
+  // Filter tickets by PM
+  const filteredTickets = pmFilter
+    ? tickets.filter((t) => {
+        if (pmFilter === "unassigned") {
+          return !t.assignee || t.assignee === "";
+        }
+        return t.assignee === pmFilter;
+      })
+    : tickets;
 
   // Sort tickets in descending order (newest first)
-  const sortedTickets = [...tickets].sort((a, b) => b.ticketNumber - a.ticketNumber);
+  const sortedTickets = [...filteredTickets].sort((a, b) => b.ticketNumber - a.ticketNumber);
+
+  // Get unassigned tickets
+  const unassignedTickets = tickets.filter((t) => !t.assignee || t.assignee === "");
+
+  // Helper to check if ticket is current for a specific PM
+  const isCurrentNumberForPm = (ticketNumber: number, pm?: string) => {
+    if (!pm) return false;
+    const pmState = pmStates[pm];
+    if (!pmState) return false;
+    return ticketNumber === pmState.currentNumber;
+  };
+
+  const isCalledForPm = (ticketNumber: number, pm?: string) => {
+    if (!pm) return false;
+    const pmState = pmStates[pm];
+    if (!pmState) return false;
+    return ticketNumber <= pmState.currentNumber;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-3 md:p-8">
@@ -550,56 +590,167 @@ export default function AdminPage() {
           </p>
         </div>
 
+        {/* PM 狀態列表 */}
+        <div className="mb-6 md:mb-8">
+          <h2 className="text-xl md:text-2xl font-semibold text-gray-800 mb-4">各 PM 狀態</h2>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {/* 未指派 PM */}
+            <div className="rounded-xl bg-white p-4 md:p-6 shadow-lg border-2 border-gray-300">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">尚未指派 PM</h3>
+              <div className="flex flex-col items-center justify-center py-4">
+                <p className="text-5xl md:text-6xl lg:text-7xl font-bold text-blue-600 mb-2">
+                  {unassignedTickets.length}
+                </p>
+                <p className="text-sm md:text-base text-gray-600">號碼總數</p>
+              </div>
+            </div>
+
+            {/* 各 PM 狀態 */}
+            {pmUsers.map((pm) => {
+              const pmState = pmStates[pm];
+              const pmTickets = tickets.filter((t) => t.assignee === pm);
+              return (
+                <div key={pm} className="rounded-xl bg-white p-4 md:p-6 shadow-lg border-2 border-blue-300">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-3">{pm}</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs text-gray-600">目前號碼</p>
+                        {!editingPmStates[pm]?.current && (
+                          <button
+                            onClick={() => {
+                              setEditingPmStates((prev) => ({
+                                ...prev,
+                                [pm]: { ...prev[pm], current: String(pmState?.currentNumber ?? 0) },
+                              }));
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-800 underline"
+                          >
+                            編輯
+                          </button>
+                        )}
+                      </div>
+                      {editingPmStates[pm]?.current !== undefined ? (
+                        <div className="space-y-2">
+                          <input
+                            type="number"
+                            value={editingPmStates[pm].current}
+                            onChange={(e) => {
+                              setEditingPmStates((prev) => ({
+                                ...prev,
+                                [pm]: { ...prev[pm], current: e.target.value },
+                              }));
+                            }}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleUpdatePmState(pm, "current", editingPmStates[pm].current!)}
+                              disabled={loading}
+                              className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs text-white font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                            >
+                              確認
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingPmStates((prev) => {
+                                  const next = { ...prev };
+                                  if (next[pm]) {
+                                    delete next[pm].current;
+                                    if (Object.keys(next[pm]).length === 0) delete next[pm];
+                                  }
+                                  return next;
+                                });
+                              }}
+                              className="flex-1 rounded-lg bg-gray-200 px-3 py-1.5 text-xs text-gray-800 font-medium hover:bg-gray-300 transition-colors"
+                            >
+                              取消
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xl font-bold text-blue-600">{pmState?.currentNumber ?? 0}</p>
+                      )}
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs text-gray-600">下一號</p>
+                        {!editingPmStates[pm]?.next && (
+                          <button
+                            onClick={() => {
+                              setEditingPmStates((prev) => ({
+                                ...prev,
+                                [pm]: { ...prev[pm], next: String(pmState?.nextNumber ?? 1) },
+                              }));
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-800 underline"
+                          >
+                            編輯
+                          </button>
+                        )}
+                      </div>
+                      {editingPmStates[pm]?.next !== undefined ? (
+                        <div className="space-y-2">
+                          <input
+                            type="number"
+                            value={editingPmStates[pm].next}
+                            onChange={(e) => {
+                              setEditingPmStates((prev) => ({
+                                ...prev,
+                                [pm]: { ...prev[pm], next: e.target.value },
+                              }));
+                            }}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleUpdatePmState(pm, "next", editingPmStates[pm].next!)}
+                              disabled={loading}
+                              className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs text-white font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                            >
+                              確認
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingPmStates((prev) => {
+                                  const next = { ...prev };
+                                  if (next[pm]) {
+                                    delete next[pm].next;
+                                    if (Object.keys(next[pm]).length === 0) delete next[pm];
+                                  }
+                                  return next;
+                                });
+                              }}
+                              className="flex-1 rounded-lg bg-gray-200 px-3 py-1.5 text-xs text-gray-800 font-medium hover:bg-gray-300 transition-colors"
+                            >
+                              取消
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xl font-bold text-purple-600">{pmState?.nextNumber ?? 1}</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleNext(pm)}
+                      disabled={loading || (pmState?.nextNumber ?? 1) > state.lastTicket}
+                      className="w-full rounded-lg bg-purple-600 px-4 py-2 text-sm text-white font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      下一號
+                    </button>
+                    <p className="text-xs text-gray-500">號碼數：{pmTickets.length}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* 狀態和操作卡片 */}
         <div className="grid gap-4 md:gap-6 md:grid-cols-2 mb-6 md:mb-8">
           <div className="rounded-xl bg-white p-4 md:p-6 shadow-lg">
-            <h2 className="mb-3 md:mb-4 text-lg md:text-xl font-semibold text-gray-800">目前狀態</h2>
+            <h2 className="mb-3 md:mb-4 text-lg md:text-xl font-semibold text-gray-800">系統狀態</h2>
             <div className="space-y-3 md:space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs md:text-sm text-gray-600">目前叫到的號碼</p>
-                  {!editingCurrentNumber && (
-                    <button
-                      onClick={() => {
-                        setEditingCurrentNumber(true);
-                        setNewCurrentNumber(String(state.currentNumber));
-                      }}
-                      className="text-xs md:text-sm text-blue-600 hover:text-blue-800 underline"
-                    >
-                      編輯
-                    </button>
-                  )}
-                </div>
-                {editingCurrentNumber ? (
-                  <div className="space-y-2">
-                    <input
-                      type="number"
-                      value={newCurrentNumber}
-                      onChange={(e) => setNewCurrentNumber(e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 px-3 md:px-4 py-2 text-sm md:text-base text-gray-900 placeholder:text-gray-400 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      placeholder="輸入號碼"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleUpdateCurrentNumber}
-                        disabled={loading}
-                        className="flex-1 rounded-lg bg-blue-600 px-3 md:px-4 py-2 text-xs md:text-sm text-white font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        確認
-                      </button>
-                      <button
-                        onClick={handleCancelEditCurrentNumber}
-                        disabled={loading}
-                        className="flex-1 rounded-lg bg-gray-200 px-3 md:px-4 py-2 text-xs md:text-sm text-gray-800 font-medium hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        取消
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-2xl md:text-3xl font-bold text-blue-600">{state.currentNumber}</p>
-                )}
-              </div>
               <div>
                 <p className="text-xs md:text-sm text-gray-600">最後發出的票號</p>
                 <p className="text-2xl md:text-3xl font-bold text-green-600">{state.lastTicket}</p>
@@ -607,54 +758,6 @@ export default function AdminPage() {
               <div>
                 <p className="text-xs md:text-sm text-gray-600">候位數量</p>
                 <p className="text-2xl md:text-3xl font-bold text-orange-600">{waitingCount}</p>
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs md:text-sm text-gray-600">下一號</p>
-                  {!editingNextNumber && (
-                    <button
-                      onClick={() => {
-                        setEditingNextNumber(true);
-                        const nextNumber = state.nextNumber ?? (state.currentNumber + 1);
-                        setNewNextNumber(String(nextNumber));
-                      }}
-                      className="text-xs md:text-sm text-blue-600 hover:text-blue-800 underline"
-                    >
-                      編輯
-                    </button>
-                  )}
-                </div>
-                {editingNextNumber ? (
-                  <div className="space-y-2">
-                    <input
-                      type="number"
-                      value={newNextNumber}
-                      onChange={(e) => setNewNextNumber(e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 px-3 md:px-4 py-2 text-sm md:text-base text-gray-900 placeholder:text-gray-400 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      placeholder="輸入下一號"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleUpdateNextNumber}
-                        disabled={loading}
-                        className="flex-1 rounded-lg bg-blue-600 px-3 md:px-4 py-2 text-xs md:text-sm text-white font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        確認
-                      </button>
-                      <button
-                        onClick={handleCancelEditNextNumber}
-                        disabled={loading}
-                        className="flex-1 rounded-lg bg-gray-200 px-3 md:px-4 py-2 text-xs md:text-sm text-gray-800 font-medium hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        取消
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-2xl md:text-3xl font-bold text-purple-600">
-                    {state.nextNumber ?? (state.currentNumber + 1)}
-                  </p>
-                )}
               </div>
             </div>
           </div>
@@ -669,13 +772,6 @@ export default function AdminPage() {
                 前往抽號頁面
               </a>
               <button
-                onClick={handleNext}
-                disabled={loading || (state.nextNumber ?? (state.currentNumber + 1)) > state.lastTicket}
-                className="w-full rounded-lg bg-purple-600 px-4 md:px-6 py-2.5 md:py-3 text-sm md:text-base text-white font-medium shadow-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                下一號
-              </button>
-              <button
                 onClick={handleExportExcel}
                 disabled={loading}
                 className="w-full rounded-lg bg-green-600 px-4 md:px-6 py-2.5 md:py-3 text-sm md:text-base text-white font-medium shadow-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -688,7 +784,22 @@ export default function AdminPage() {
 
         {/* 票券列表 */}
         <div className="rounded-xl bg-white p-4 md:p-6 shadow-lg">
-          <h2 className="mb-4 md:mb-6 text-xl md:text-2xl font-semibold text-gray-800">號碼列表</h2>
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 md:mb-6 gap-3">
+            <h2 className="text-xl md:text-2xl font-semibold text-gray-800">號碼列表</h2>
+            <select
+              value={pmFilter}
+              onChange={(e) => setPmFilter(e.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            >
+              <option value="">全部 PM</option>
+              <option value="unassigned">尚未指派 PM</option>
+              {pmUsers.map((pm) => (
+                <option key={pm} value={pm}>
+                  {pm}
+                </option>
+              ))}
+            </select>
+          </div>
           {sortedTickets.length === 0 ? (
             <div className="text-center py-8 md:py-12 text-sm md:text-base text-gray-500">
               目前沒有任何票券
@@ -699,9 +810,9 @@ export default function AdminPage() {
                 <div
                   key={ticket.ticketNumber}
                   className={`rounded-lg border-2 p-4 md:p-5 transition-all ${
-                    isCurrentNumber(ticket.ticketNumber)
+                    isCurrentNumberForPm(ticket.ticketNumber, ticket.assignee || (pmFilter === "unassigned" ? "unassigned" : undefined))
                       ? "border-blue-500 bg-blue-50"
-                      : isCalled(ticket.ticketNumber)
+                      : isCalledForPm(ticket.ticketNumber, ticket.assignee || (pmFilter === "unassigned" ? "unassigned" : undefined))
                       ? "border-gray-300 bg-gray-50"
                       : "border-gray-200 bg-white"
                   }`}
@@ -711,9 +822,9 @@ export default function AdminPage() {
                       <div className="flex items-center justify-between mb-3">
                         <div
                           className={`text-xl md:text-2xl font-bold ${
-                            isCurrentNumber(ticket.ticketNumber)
+                            isCurrentNumberForPm(ticket.ticketNumber, ticket.assignee || (pmFilter === "unassigned" ? "unassigned" : undefined))
                               ? "text-blue-600"
-                              : isCalled(ticket.ticketNumber)
+                              : isCalledForPm(ticket.ticketNumber, ticket.assignee || (pmFilter === "unassigned" ? "unassigned" : undefined))
                               ? "text-gray-500"
                               : "text-gray-900"
                           }`}
@@ -798,9 +909,9 @@ export default function AdminPage() {
                         >
                           <div
                             className={`text-xl md:text-2xl font-bold mb-2 ${
-                              isCurrentNumber(ticket.ticketNumber)
+                              isCurrentNumberForPm(ticket.ticketNumber, ticket.assignee || (pmFilter === "unassigned" ? "unassigned" : undefined))
                                 ? "text-blue-600"
-                                : isCalled(ticket.ticketNumber)
+                                : isCalledForPm(ticket.ticketNumber, ticket.assignee || (pmFilter === "unassigned" ? "unassigned" : undefined))
                                 ? "text-gray-500"
                                 : "text-gray-900"
                             }`}
@@ -818,7 +929,7 @@ export default function AdminPage() {
                             </div>
                           )}
                           <div className="flex flex-wrap items-center gap-2">
-                            {isCurrentNumber(ticket.ticketNumber) && (
+                            {isCurrentNumberForPm(ticket.ticketNumber, ticket.assignee || (pmFilter === "unassigned" ? "unassigned" : undefined)) && (
                               <span className="px-2 py-1 rounded-full bg-blue-600 text-white text-xs font-medium whitespace-nowrap">
                                 目前號碼
                               </span>
