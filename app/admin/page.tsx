@@ -99,6 +99,7 @@ export default function AdminPage() {
   const [editingNextNumber, setEditingNextNumber] = useState(false);
   const [newNextNumber, setNewNextNumber] = useState<string>("");
   const editingTicketRef = useRef<number | null>(null);
+  const [pmUsers, setPmUsers] = useState<string[]>([]);
 
   const logEvent = async (payload: LogPayload) => {
     if (!username) return;
@@ -211,10 +212,24 @@ export default function AdminPage() {
     editingTicketRef.current = editingTicket;
   }, [editingTicket]);
 
+  const fetchPmUsers = async () => {
+    try {
+      const res = await fetch("/api/users/pm-list");
+      if (res.ok) {
+        const data = await res.json();
+        const usernames = (data.users || []).map((u: { username: string; role: string }) => u.username);
+        setPmUsers(usernames);
+      }
+    } catch (error) {
+      console.error("Failed to fetch PM users:", error);
+    }
+  };
+
   useEffect(() => {
     if (!isAuthenticated) return;
     fetchState();
     fetchTickets();
+    fetchPmUsers();
   }, [isAuthenticated]);
 
   const handleNext = async () => {
@@ -738,13 +753,18 @@ export default function AdminPage() {
                         <label className="block text-xs md:text-sm font-medium text-gray-700 mb-2">
                           PM
                         </label>
-                        <input
-                          type="text"
+                        <select
                           value={editAssignee}
                           onChange={(e) => setEditAssignee(e.target.value)}
-                          className="w-full rounded-lg border border-gray-300 px-3 md:px-4 py-2 text-sm md:text-base text-gray-900 placeholder:text-gray-400 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                          placeholder="輸入PM姓名"
-                        />
+                          className="w-full rounded-lg border border-gray-300 px-3 md:px-4 py-2 text-sm md:text-base text-gray-900 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        >
+                          <option value="">請選擇 PM</option>
+                          {pmUsers.map((pm) => (
+                            <option key={pm} value={pm}>
+                              {pm}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div className="flex gap-2">
                         <button

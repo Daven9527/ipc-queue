@@ -79,6 +79,7 @@ export default function DisplayPage() {
   const [viewingTicket, setViewingTicket] = useState<TicketInfo | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+  const [pmFilter, setPmFilter] = useState<string>("");
 
   useEffect(() => {
     const fetchInitial = async () => {
@@ -131,8 +132,22 @@ export default function DisplayPage() {
   // Find current ticket info
   const currentTicket = tickets.find((t) => t.ticketNumber === state.currentNumber);
 
+  // Get unique PM list from tickets
+  const pmList = Array.from(
+    new Set(
+      tickets
+        .map((t) => t.assignee)
+        .filter((pm): pm is string => Boolean(pm))
+    )
+  ).sort();
+
+  // Filter tickets by PM if filter is set
+  const filteredTickets = pmFilter
+    ? tickets.filter((t) => t.assignee === pmFilter)
+    : tickets;
+
   // Sort tickets in ascending order (oldest first)
-  const sortedTickets = [...tickets].sort((a, b) => a.ticketNumber - b.ticketNumber);
+  const sortedTickets = [...filteredTickets].sort((a, b) => a.ticketNumber - b.ticketNumber);
 
   const isCurrentNumber = (ticketNumber: number) => ticketNumber === state.currentNumber;
   const isCalled = (ticketNumber: number) => ticketNumber <= state.currentNumber;
@@ -271,9 +286,30 @@ export default function DisplayPage() {
         </div>
 
         {/* 所有號碼列表 */}
-        {sortedTickets.length > 0 && (
+        {tickets.length > 0 && (
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl shadow-xl p-4 md:p-6">
-            <h2 className="text-xl md:text-2xl lg:text-3xl font-bold text-white mb-4 md:mb-6 text-center">所有號碼狀態</h2>
+            <div className="flex flex-col md:flex-row items-center justify-between mb-4 md:mb-6 gap-3 md:gap-4">
+              <h2 className="text-xl md:text-2xl lg:text-3xl font-bold text-white text-center">所有號碼狀態</h2>
+              {pmList.length > 0 && (
+                <select
+                  value={pmFilter}
+                  onChange={(e) => setPmFilter(e.target.value)}
+                  className="rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 text-white text-sm md:text-base px-3 md:px-4 py-2 font-medium focus:border-white/40 focus:ring-2 focus:ring-white/20 focus:outline-none"
+                >
+                  <option value="">全部 PM</option>
+                  {pmList.map((pm) => (
+                    <option key={pm} value={pm} className="bg-gray-800 text-white">
+                      {pm}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            {sortedTickets.length === 0 ? (
+              <div className="text-center text-gray-300 py-8">
+                沒有符合條件的號碼
+              </div>
+            ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-4">
               {sortedTickets.map((ticket) => (
                 <div
@@ -329,6 +365,7 @@ export default function DisplayPage() {
                 </div>
               ))}
             </div>
+            )}
           </div>
         )}
       </div>

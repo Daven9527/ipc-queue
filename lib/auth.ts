@@ -29,7 +29,8 @@ export async function authenticateBasic(request: Request) {
 
 export async function requireRole(request: Request, role: UserRole) {
   const user = await authenticateBasic(request);
-  if (!user || user.role !== role) {
+  // Super role can access all roles
+  if (!user || (user.role !== role && user.role !== "super")) {
     return NextResponse.json({ error: "未授權" }, { status: 401 });
   }
   return null;

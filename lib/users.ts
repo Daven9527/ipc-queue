@@ -10,11 +10,6 @@ export interface UserRecord {
 
 const USERS_SET_KEY = "users:list";
 const USERS_INITIALIZED_KEY = "users:initialized";
-const DEFAULT_PM_USER = {
-  username: "pmadmin",
-  password: process.env.DEFAULT_PM_PASSWORD || "Bailey",
-  role: "pm" as UserRole,
-};
 const DEFAULT_SUPER_USER = {
   username: "superadmin",
   password: process.env.DEFAULT_SUPER_PASSWORD || "Eunice",
@@ -34,7 +29,6 @@ export async function ensureDefaultUsers() {
   const initialized = await redis.get<string>(USERS_INITIALIZED_KEY);
   if (initialized === "true") return;
 
-  await saveUser(DEFAULT_PM_USER);
   await saveUser(DEFAULT_SUPER_USER);
   await redis.set(USERS_INITIALIZED_KEY, "true");
 }

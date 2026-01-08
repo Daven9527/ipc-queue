@@ -6,12 +6,20 @@ import { createOrUpdateUser, ensureDefaultUsers, listUsers } from "@/lib/users";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const authError = await requireRole(request, "super");
-  if (authError) return authError;
+  // Allow both pm and super roles to access
+  const authError = await requireRole(request, "pm");
+  if (authError) {
+    const superError = await requireRole(request, "super");
+    if (superError) return superError;
+  }
 
   await ensureDefaultUsers();
   const users = await listUsers();
-  return NextResponse.json({ users });
+  // Filter out superadmin and only return pm and super roles
+  const filteredUsers = users.filter(
+    (u) => u.username !== "superadmin" && (u.role === "pm" || u.role === "super")
+  );
+  return NextResponse.json({ users: filteredUsers });
 }
 
 export async function POST(request: Request) {
