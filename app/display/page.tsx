@@ -109,7 +109,7 @@ export default function DisplayPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedPm) {
+    if (selectedPm && selectedPm !== "all") {
       fetchPmState(selectedPm);
     }
   }, [selectedPm]);
@@ -123,7 +123,7 @@ export default function DisplayPage() {
       const ticketsData: TicketListResponse = await ticketsRes.json();
       setTickets(ticketsData.tickets || []);
       
-      if (selectedPm) {
+      if (selectedPm && selectedPm !== "all") {
         await fetchPmState(selectedPm);
       }
       
@@ -169,20 +169,29 @@ export default function DisplayPage() {
 
   // Filter tickets by selected PM for display
   const displayTickets = selectedPm
-    ? tickets.filter((t) => {
-        if (selectedPm === "unassigned") {
-          return !t.assignee || t.assignee === "";
-        }
-        return t.assignee === selectedPm;
-      })
+    ? selectedPm === "all"
+      ? tickets // Show all tickets when "all" is selected
+      : tickets.filter((t) => {
+          if (selectedPm === "unassigned") {
+            return !t.assignee || t.assignee === "";
+          }
+          return t.assignee === selectedPm;
+        })
     : [];
 
   // Sort tickets in ascending order (oldest first)
   const sortedTickets = [...filteredTickets].sort((a, b) => a.ticketNumber - b.ticketNumber);
   const sortedDisplayTickets = [...displayTickets].sort((a, b) => a.ticketNumber - b.ticketNumber);
 
-  const isCurrentNumber = (ticketNumber: number) => selectedPm && ticketNumber === pmState.currentNumber;
-  const isCalled = (ticketNumber: number) => selectedPm && ticketNumber <= pmState.currentNumber;
+  const isCurrentNumber = (ticketNumber: number) => {
+    if (!selectedPm || selectedPm === "all") return false;
+    return ticketNumber === pmState.currentNumber;
+  };
+  
+  const isCalled = (ticketNumber: number) => {
+    if (!selectedPm || selectedPm === "all") return false;
+    return ticketNumber <= pmState.currentNumber;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 p-4 md:p-8">
@@ -202,13 +211,14 @@ export default function DisplayPage() {
             value={selectedPm}
             onChange={(e) => {
               setSelectedPm(e.target.value);
-              if (e.target.value) {
+              if (e.target.value && e.target.value !== "all") {
                 fetchPmState(e.target.value);
               }
             }}
             className="rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 text-white text-sm md:text-base px-4 py-2 font-medium focus:border-white/40 focus:ring-2 focus:ring-white/20 focus:outline-none"
           >
             <option value="">請選擇 PM</option>
+            <option value="all" className="bg-gray-800 text-white">所有 PM</option>
             <option value="unassigned" className="bg-gray-800 text-white">尚未指派 PM</option>
             {pmList.filter(pm => pm !== "unassigned").map((pm) => (
               <option key={pm} value={pm} className="bg-gray-800 text-white">
@@ -230,8 +240,8 @@ export default function DisplayPage() {
           )}
         </div>
 
-        {/* 目前叫號區塊 - 只在選擇 PM 後顯示 */}
-        {selectedPm && (
+        {/* 目前叫號區塊 - 只在選擇特定 PM 後顯示（不包括「所有 PM」） */}
+        {selectedPm && selectedPm !== "all" && (
           <div className="mb-6 md:mb-8">
             <h1 className="text-2xl md:text-4xl lg:text-5xl font-bold text-white mb-2 md:mb-4 text-center">
               {selectedPm === "unassigned" ? "尚未指派 PM" : selectedPm} - 目前叫號
@@ -343,7 +353,11 @@ export default function DisplayPage() {
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl shadow-xl p-4 md:p-6">
             <div className="flex flex-col md:flex-row items-center justify-between mb-4 md:mb-6 gap-3 md:gap-4">
               <h2 className="text-xl md:text-2xl lg:text-3xl font-bold text-white text-center">
-                {selectedPm === "unassigned" ? "尚未指派 PM" : selectedPm} - 號碼列表
+                {selectedPm === "all" 
+                  ? "所有 PM - 號碼列表"
+                  : selectedPm === "unassigned" 
+                    ? "尚未指派 PM - 號碼列表"
+                    : `${selectedPm} - 號碼列表`}
               </h2>
               <select
                 value={pmFilter}

@@ -106,6 +106,7 @@ export default function AdminPage() {
   const editingTicketRef = useRef<number | null>(null);
   const [pmUsers, setPmUsers] = useState<string[]>([]);
   const [pmFilter, setPmFilter] = useState<string>("");
+  const [pmStateFilter, setPmStateFilter] = useState<string>("all");
 
   const logEvent = async (payload: LogPayload) => {
     if (!username) return;
@@ -592,21 +593,40 @@ export default function AdminPage() {
 
         {/* PM 狀態列表 */}
         <div className="mb-6 md:mb-8">
-          <h2 className="text-xl md:text-2xl font-semibold text-gray-800 mb-4">各 PM 狀態</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl md:text-2xl font-semibold text-gray-800">各 PM 狀態</h2>
+            <select
+              value={pmStateFilter}
+              onChange={(e) => setPmStateFilter(e.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm md:text-base text-gray-900 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            >
+              <option value="all">所有 PM</option>
+              <option value="unassigned">尚未指派 PM</option>
+              {pmUsers.map((pm) => (
+                <option key={pm} value={pm}>
+                  {pm}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {/* 未指派 PM */}
-            <div className="rounded-xl bg-white p-4 md:p-6 shadow-lg border-2 border-gray-300">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">尚未指派 PM</h3>
-              <div className="flex flex-col items-center justify-center py-4">
-                <p className="text-5xl md:text-6xl lg:text-7xl font-bold text-blue-600 mb-2">
-                  {unassignedTickets.length}
-                </p>
-                <p className="text-sm md:text-base text-gray-600">號碼總數</p>
+            {/* 未指派 PM - 只在篩選為 "all" 或 "unassigned" 時顯示 */}
+            {(pmStateFilter === "all" || pmStateFilter === "unassigned") && (
+              <div className="rounded-xl bg-white p-4 md:p-6 shadow-lg border-2 border-gray-300">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">尚未指派 PM</h3>
+                <div className="flex flex-col items-center justify-center py-4">
+                  <p className="text-5xl md:text-6xl lg:text-7xl font-bold text-blue-600 mb-2">
+                    {unassignedTickets.length}
+                  </p>
+                  <p className="text-sm md:text-base text-gray-600">號碼總數</p>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* 各 PM 狀態 */}
-            {pmUsers.map((pm) => {
+            {/* 各 PM 狀態 - 根據篩選條件顯示 */}
+            {pmUsers
+              .filter((pm) => pmStateFilter === "all" || pmStateFilter === pm)
+              .map((pm) => {
               const pmState = pmStates[pm];
               const pmTickets = tickets.filter((t) => t.assignee === pm);
               return (
